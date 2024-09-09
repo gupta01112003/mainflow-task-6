@@ -1,0 +1,233 @@
+import tkinter as tk
+from tkinter import messagebox, ttk
+import sqlite3
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+
+# Set up database connection
+conn = sqlite3.connect('billing.db')
+cursor = conn.cursor()
+
+# Create tables
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS products (
+    product_id INTEGER PRIMARY KEY,
+    name TEXT,
+    description TEXT,
+    price REAL
+)
+''')
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS customers (
+    customer_id INTEGER PRIMARY KEY,
+    name TEXT,
+    email TEXT,
+    phone TEXT
+)
+''')
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS transactions (
+    transaction_id INTEGER PRIMARY KEY,
+    customer_id INTEGER,
+    product_id INTEGER,
+    date TEXT,
+    quantity INTEGER,
+    total_amount REAL,
+    FOREIGN KEY(customer_id) REFERENCES customers(customer_id),
+    FOREIGN KEY(product_id) REFERENCES products(product_id)
+)
+''')
+conn.commit()
+
+# Close the connection
+conn.close()
+
+# Function to add a new product to the database
+def add_product():
+    conn = sqlite3.connect('billing.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO products (name, description, price) VALUES (?, ?, ?)", 
+                   (entry_product_name.get(), entry_product_desc.get(), entry_product_price.get()))
+    conn.commit()
+    conn.close()
+    messagebox.showinfo("Success", "Product added successfully")
+    entry_product_name.delete(0, tk.END)
+    entry_product_desc.delete(0, tk.END)
+    entry_product_price.delete(0, tk.END)
+    refresh_products()
+
+# Function to add a new customer to the database
+def add_customer():
+    conn = sqlite3.connect('billing.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO customers (name, email, phone) VALUES (?, ?, ?)", 
+                   (entry_customer_name.get(), entry_customer_email.get(), entry_customer_phone.get()))
+    conn.commit()
+    conn.close()
+    messagebox.showinfo("Success", "Customer added successfully")
+    entry_customer_name.delete(0, tk.END)
+    entry_customer_email.delete(0, tk.END)
+    entry_customer_phone.delete(0, tk.END)
+    refresh_customers()
+
+# Function to generate invoice
+def generate_invoice():
+    conn = sqlite3.connect('billing.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM customers WHERE customer_id=?", (entry_invoice_customer_id.get(),))
+    customer = cursor.fetchone()
+    cursor.execute("SELECT * FROM products WHERE product_id=?", (entry_invoice_product_id.get(),))
+    product = cursor.fetchone()
+    total_amount = float(product[3]) * int(entry_invoice_quantity.get())
+    cursor.execute("INSERT INTO transactions (customer_id, product_id, date, quantity, total_amount) VALUES (?, ?, date('now'), ?, ?)", 
+                   (customer[0], product[0], entry_invoice_quantity.get(), total_amount))
+    conn.commit()
+    conn.close()
+    c = canvas.Canvas(f"invoice_{customer[0]}.pdf", pagesize=letter)
+    c.drawString(100, 750, f"Customer Name: {customer[1]}")
+    c.drawString(100, 735, f"Product: {product[1]}")
+    c.drawString(100, 720, f"Quantity: {entry_invoice_quantity.get()}")
+    c.drawString(100, 705, f"Total Amount: ${total_amount}")
+    c.save()
+    messagebox.showinfo("Success", "Invoice generated successfully")
+    entry_invoice_customer_id.delete(0, tk.END)
+    entry_invoice_product_id.delete(0, tk.END)
+    entry_invoice_quantity.delete(0, tk.END)
+    refresh_transactions()
+
+# Function to refresh products list
+def refresh_products():
+    for row in tree_products.get_children():
+        tree_products.delete(row)
+    conn = sqlite3.connect('billing.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM products")
+    products = cursor.fetchall()
+    for product in products:
+        tree_products.insert("", "end", values=(product[0], product[1], product[2], product[3]))
+    conn.close()
+
+# Function to refresh customers list
+def refresh_customers():
+    for row in tree_customers.get_children():
+        tree_customers.delete(row)
+    conn = sqlite3.connect('billing.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM customers")
+    customers = cursor.fetchall()
+    for customer in customers:
+        tree_customers.insert("", "end", values=(customer[0], customer[1], customer[2], customer[3]))
+    conn.close()
+
+# Function to refresh transactions list
+def refresh_transactions():
+    for row in tree_transactions.get_children():
+        tree_transactions.delete(row)
+    conn = sqlite3.connect('billing.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT t.transaction_id, c.name, p.name, t.quantity, t.total_amount, t.date FROM transactions t JOIN customers c ON t.customer_id = c.customer_id JOIN products p ON t.product_id = p.product_id")
+    transactions = cursor.fetchall()
+    for transaction in transactions:
+        tree_transactions.insert("", "end", values=(transaction[0], transaction[1], transaction[2], transaction[3], transaction[4], transaction[5]))
+    conn.close()
+
+# Main window
+root = tk.Tk()
+root.title("Billing Software")
+root.geometry("800x800")
+
+# Product Entry Form
+frame_product = tk.LabelFrame(root, text="Add Product", padx=10, pady=10)
+frame_product.pack(padx=10, pady=10)
+
+tk.Label(frame_product, text="Name").grid(row=0, column=0)
+entry_product_name = tk.Entry(frame_product)
+entry_product_name.grid(row=0, column=1)
+
+tk.Label(frame_product, text="Description").grid(row=1, column=0)
+entry_product_desc = tk.Entry(frame_product)
+entry_product_desc.grid(row=1, column=1)
+
+tk.Label(frame_product, text="Price").grid(row=2, column=0)
+entry_product_price = tk.Entry(frame_product)
+entry_product_price.grid(row=2, column=1)
+
+tk.Button(frame_product, text="Add Product", command=add_product).grid(row=3, columnspan=2)
+
+# Customer Entry Form
+frame_customer = tk.LabelFrame(root, text="Add Customer", padx=10, pady=10)
+frame_customer.pack(padx=10, pady=10)
+
+tk.Label(frame_customer, text="Name").grid(row=0, column=0)
+entry_customer_name = tk.Entry(frame_customer)
+entry_customer_name.grid(row=0, column=1)
+
+tk.Label(frame_customer, text="Email").grid(row=1, column=0)
+entry_customer_email = tk.Entry(frame_customer)
+entry_customer_email.grid(row=1, column=1)
+
+tk.Label(frame_customer, text="Phone").grid(row=2, column=0)
+entry_customer_phone = tk.Entry(frame_customer)
+entry_customer_phone.grid(row=2, column=1)
+
+tk.Button(frame_customer, text="Add Customer", command=add_customer).grid(row=3, columnspan=2)
+
+# Invoice Generation Form
+frame_invoice = tk.LabelFrame(root, text="Generate Invoice", padx=10, pady=10)
+frame_invoice.pack(padx=10, pady=10)
+
+tk.Label(frame_invoice, text="Customer ID").grid(row=0, column=0)
+entry_invoice_customer_id = tk.Entry(frame_invoice)
+entry_invoice_customer_id.grid(row=0, column=1)
+
+tk.Label(frame_invoice, text="Product ID").grid(row=1, column=0)
+entry_invoice_product_id = tk.Entry(frame_invoice)
+entry_invoice_product_id.grid(row=1, column=1)
+
+tk.Label(frame_invoice, text="Quantity").grid(row=2, column=0)
+entry_invoice_quantity = tk.Entry(frame_invoice)
+entry_invoice_quantity.grid(row=2, column=1)
+
+tk.Button(frame_invoice, text="Generate Invoice", command=generate_invoice).grid(row=3, columnspan=2)
+
+# Products List
+frame_products_list = tk.LabelFrame(root, text="Products List", padx=10, pady=10)
+frame_products_list.pack(padx=10, pady=10)
+
+tree_products = ttk.Treeview(frame_products_list, columns=("ID", "Name", "Description", "Price"), show='headings')
+tree_products.heading("ID", text="ID")
+tree_products.heading("Name", text="Name")
+tree_products.heading("Description", text="Description")
+tree_products.heading("Price", text="Price")
+tree_products.pack()
+
+# Customers List
+frame_customers_list = tk.LabelFrame(root, text="Customers List", padx=10, pady=10)
+frame_customers_list.pack(padx=10, pady=10)
+
+tree_customers = ttk.Treeview(frame_customers_list, columns=("ID", "Name", "Email", "Phone"), show='headings')
+tree_customers.heading("ID", text="ID")
+tree_customers.heading("Name", text="Name")
+tree_customers.heading("Email", text="Email")
+tree_customers.heading("Phone", text="Phone")
+tree_customers.pack()
+
+# Transactions List
+frame_transactions_list = tk.LabelFrame(root, text="Transactions List", padx=10, pady=10)
+frame_transactions_list.pack(padx=10, pady=10)
+
+tree_transactions = ttk.Treeview(frame_transactions_list, columns=("Transaction ID", "Customer", "Product", "Quantity", "Total Amount", "Date"), show='headings')
+tree_transactions.heading("Transaction ID", text="Transaction ID")
+tree_transactions.heading("Customer", text="Customer")
+tree_transactions.heading("Product", text="Product")
+tree_transactions.heading("Quantity", text="Quantity")
+tree_transactions.heading("Total Amount", text="Total Amount")
+tree_transactions.heading("Date", text="Date")
+tree_transactions.pack()
+
+# Refresh lists initially
+refresh_products()
+refresh_customers()
+# refresh_transactions()
+
+root.mainloop()
